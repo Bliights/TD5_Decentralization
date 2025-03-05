@@ -68,7 +68,6 @@ export async function node(
     return messages[k][phase].length
   }
 
-  // TODO implement this
   // this route allows the node to receive messages from other nodes
   node.post("/message", (req, res) => {
     if (globalThis.nodeStates[nodeId].killed) {
@@ -108,22 +107,21 @@ export async function node(
   async function benOrConsensus() {
     while (!globalThis.nodeStates[nodeId].decided) {
       if (globalThis.nodeStates[nodeId].killed || isFaulty) return;
-
+      
       globalThis.nodeStates[nodeId].k! += 1;
       let k = globalThis.nodeStates[nodeId].k!;
       let x = globalThis.nodeStates[nodeId].x!;
-
       await sendMessage("R", k, x);
 
       while (getMessagesLen(k, "R") < N - F) {
-        await new Promise((resolve) => setTimeout(resolve, 100));
+        await new Promise((resolve) => setTimeout(resolve, 10));
       }
 
       const messages_R = getMessages(k, "R");
       const nb_val_R = Object.entries(countValue(messages_R))
                       .filter(([_, count]) => count > N/2)
                       .map(([key, _]) => (key === "0" ? 0 : key === "1" ? 1 : "?")) as Value[];
-
+      
       if (nb_val_R.length > 0){
         await sendMessage("P", k, nb_val_R[0]);
       }
@@ -132,24 +130,32 @@ export async function node(
       }
 
       while (getMessagesLen(k, "P")  < N - F) {
-        await new Promise((resolve) => setTimeout(resolve, 100));
+        await new Promise((resolve) => setTimeout(resolve, 10));
       }
 
       const messages_P = getMessages(k, "P");
       const nb_val_P = Object.entries(countValue(messages_P))
                       .filter(([key, count]) => count >= F + 1 && key != "?")
                       .map(([key, _]) => (key === "0" ? 0 : 1)) as Value[];
-
+      
       if (nb_val_P.length > 0){
         globalThis.nodeStates[nodeId].x = nb_val_P[0];
         globalThis.nodeStates[nodeId].decided = true;
       }
       else{
-        globalThis.nodeStates[nodeId].x = Math.random() < 0.5 ? 0 : 1;
+        const at_least = Object.entries(countValue(messages_P))
+                      .filter(([key, count]) => count >= 1 && key != "?")
+                      .map(([key, _]) => (key === "0" ? 0 : 1)) as Value[];
+        
+        if (at_least.length > 0) {
+          globalThis.nodeStates[nodeId].x = at_least[0];
+        } 
+        else {
+          globalThis.nodeStates[nodeId].x = Math.random() < 0.5 ? 0 : 1;
+        }
       }
   }}
 
-  // TODO implement this
   // this route is used to start the consensus algorithm
   node.get("/start", async (req, res) => {
     if (!nodesAreReady()) {
@@ -160,8 +166,6 @@ export async function node(
     return res.status(200).send("Consensus started");
   });
 
-
-  // TODO implement this
   // this route is used to stop the consensus algorithm
   node.get("/stop", (req, res) => {
     globalThis.nodeStates[nodeId].killed = true;
